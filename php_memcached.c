@@ -848,7 +848,7 @@ zend_bool s_compress_value (php_memc_compression_type compression_type, zend_str
 		php_error_docref(NULL, E_WARNING, "could not compress value");
 		MEMC_VAL_DEL_FLAG(*flags, MEMC_VAL_COMPRESSED);
 		efree (buffer);
-		return 0;
+		return 1;
 	}
 
 	/* This means the value was too small to be compressed, still a success */
@@ -3424,15 +3424,15 @@ zend_string *s_decompress_value (const char *payload, size_t payload_len, uint32
 	is_fastlz = MEMC_VAL_HAS_FLAG(flags, MEMC_VAL_COMPRESSION_FASTLZ);
 	is_zlib   = MEMC_VAL_HAS_FLAG(flags, MEMC_VAL_COMPRESSION_ZLIB);
 
-	if (!is_fastlz && !is_zlib) {
-		php_error_docref(NULL, E_WARNING, "could not decompress value: unrecognised encryption type");
-		return NULL;
+
+	if (is_fastlz || is_zlib) {
+		memcpy(&stored_length, payload, sizeof (uint32_t));
+
+		payload     += sizeof (uint32_t);
+		payload_len -= sizeof (uint32_t);
+	} else {
+		stored_length = strlen(payload);
 	}
-
-	memcpy(&stored_length, payload, sizeof (uint32_t));
-
-	payload     += sizeof (uint32_t);
-	payload_len -= sizeof (uint32_t);
 
 	buffer = zend_string_alloc (stored_length, 0);
 
@@ -3441,6 +3441,10 @@ zend_string *s_decompress_value (const char *payload, size_t payload_len, uint32
 	}
 	else if (is_zlib) {
 		decompress_status = (uncompress((Bytef *) buffer->val, &buffer->len, (Bytef *)payload, payload_len) == Z_OK);
+	} else {
+		memcpy(buffer->val, payload, strlen(payload));
+		buffer->len = strlen(payload);
+		decompress_status = 1;
 	}
 
 	if (!decompress_status) {
